@@ -216,6 +216,12 @@ table.kt{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px}
 .views{max-width:calc(100% - 200px)}
 @media (max-width:860px){.views{max-width:none;right:8px}}
 
+.refs{margin-top:16px;border:1px solid var(--line);border-radius:11px;padding:10px 14px;background:var(--surface-2)}
+.refs summary{cursor:pointer;font:600 11px var(--font-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.refs a{display:block;padding:7px 0;border-top:1px solid var(--line);color:var(--ink-2);font-size:13.5px;text-decoration:none}
+.refs a:first-of-type{margin-top:8px}
+.refs a:hover{color:var(--accent)}.refs a b{color:var(--ink);font-weight:600;margin-right:4px}
+
 </style>
 </head>
 <body>
@@ -360,7 +366,7 @@ const SCENE = (() => {
     const pel = mk('pelvis', V3(J.pelvis)); order.push(pel);
     const sp = mk('spine', V3(J.spine), pel), ch = mk('chest', V3(J.chest), sp), nk = mk('neck', V3(J.neck), ch), hd = mk('head', V3(J.head), nk);
     order.push(sp, ch, nk, hd);
-    for (const [S, s] of [['L', 1], ['R', -1]]) { const t = mk('thigh' + S, V3(J.thigh, s), pel), sh = mk('shin' + S, V3(J.shin, s), t), f = mk('foot' + S, V3(J.foot, s), sh), to = mk('toe' + S, V3(J.toe, s), f); order.push(t, sh, f, to); }
+    for (const [S, s] of [['L', 1], ['R', -1]]) { const t = mk('thigh' + S, V3(J.thigh, s), pel); t.userData.py = t.position.y; const sh = mk('shin' + S, V3(J.shin, s), t), f = mk('foot' + S, V3(J.foot, s), sh), to = mk('toe' + S, V3(J.toe, s), f); order.push(t, sh, f, to); }
     for (const [S, s] of [['L', 1], ['R', -1]]) { const u = mk('uparm' + S, V3(J.uparm, s), ch), f = mk('forearm' + S, V3(J.forearm, s), u); order.push(u, f); }
     const uni = { mC: { value: MUS.map(m => new THREE.Vector3(...m.c)) }, mR: { value: MUS.map(m => new THREE.Vector3(...m.r)) }, mA: { value: new Float32Array(8) }, uTint: { value: 0 }, uTintAmt: { value: 0 } };
     const mat = new THREE.MeshStandardMaterial({ color, roughness: .58, metalness: .04 });
@@ -460,7 +466,7 @@ varying vec3 vRest; uniform vec3 mC[8]; uniform vec3 mR[8]; uniform float mA[8];
   function wp(bone, rest, out) { return out.copy(rest).sub(bone.userData.w).applyMatrix4(bone.matrixWorld); }
   function pose(p, pat, t, fig, xo, track, corr, depth) {
     fig = fig || main; xo = xo || 0; corr = corr || [0, 0]; depth = depth || 0; const B = fig.bones, root = fig.root, mesh = fig.mesh, R = legAngles(p, true, pat, t), L = legAngles(p + .5, false, pat, t), c2 = Math.cos(2 * Math.PI * p), s2 = Math.sin(2 * Math.PI * p);
-    R.k += 20 * corr[0]; R.h += 8 * corr[0]; L.k += 20 * corr[1]; L.h += 8 * corr[1];
+
     let roll = -3 * s2, yaw = 4 * c2, lean = 3, tr = 0, sway = -.26 * s2, neck = 0, swingA = 14, elb = 10, armAbd = 0, hike = 0, tyaw = -1.7;
     let aR = { f: 0, e: 0, abd: 0, fix: false };
     switch (pat) {
@@ -481,7 +487,7 @@ varying vec3 vRest; uniform vec3 mC[8]; uniform vec3 mR[8]; uniform float mA[8];
     B.head.rotation.set(rad(neck * .5 - lean * .3), rad(-yaw * .1), rad(-tr * .3));
     for (const [S, A, sg] of [['R', R, -1], ['L', L, 1]]) {
       B['thigh' + S].rotation.set(rad(-A.h - lean * .35), rad(sg * A.rot), rad(-roll + sg * A.abd));
-      B['thigh' + S].scale.y = A.len; B['shin' + S].scale.y = A.len;
+      B['thigh' + S].position.y = B['thigh' + S].userData.py; B['thigh' + S].scale.y = A.len; B['shin' + S].scale.y = A.len;
       B['shin' + S].rotation.x = rad(A.k);
       B['foot' + S].rotation.x = rad(-A.a);
       B['toe' + S].rotation.x = 0;
@@ -503,14 +509,16 @@ varying vec3 vRest; uniform vec3 mC[8]; uniform vec3 mR[8]; uniform float mA[8];
     mesh.updateMatrixWorld(true);
     let min = 1e9, zs = [0, 0], ys = [1e9, 1e9]; const hx = [0, 0], hz = [0, 0];
     [['R', -1, 0], ['L', 1, 1]].forEach(([S, sg, i]) => CONTACT.forEach(c => { wp(B[c[3] + S], tmp.set(c[0] * sg, c[1], c[2]), tmp); if (tmp.y < ys[i]) { ys[i] = tmp.y; } if (c[2] === 1.3) zs[i] = tmp.z; if (c[2] === -.3) { hx[i] = tmp.x; hz[i] = tmp.z; } }));
-    const sR = R.x < .6, sL = L.x < .6;
-    min = sR && sL ? Math.min(ys[0], ys[1]) : sR ? ys[0] : sL ? ys[1] : Math.min(ys[0], ys[1]);
-    fig.pen = [ys[0] - min, ys[1] - min];
-    if (depth < 10) { const d0 = !sR ? .07 - fig.pen[0] : 0, d1 = !sL ? .07 - fig.pen[1] : 0; if (d0 > .01 || d1 > .01) return pose(p, pat, t, fig, xo, track, [corr[0] + Math.max(0, d0), corr[1] + Math.max(0, d1)], depth + 1); }
+    const swW = x => x < .6 ? 0 : ss(.6, .74, x) * (1 - ss(.9, 1, x)), wR = swW(R.x), wL = swW(L.x), eR = ys[0] + 1.6 * wR, eL = ys[1] + 1.6 * wL;
+    { const k = .05, m0 = Math.min(eR, eL); min = m0 - k * Math.log(Math.exp(-(eR - m0) / k) + Math.exp(-(eL - m0) / k)) + k * Math.LN2 * Math.exp(-Math.abs(eR - eL) / k); }
+    fig.pen = [ys[0] - min, ys[1] - min]; fig.ry = root.position.y - min; fig.kn = [R.k, L.k];
+    const d0 = Math.max(0, .08 * wR - fig.pen[0]), d1 = Math.max(0, .08 * wL - fig.pen[1]);
+    B.thighR.position.y = B.thighR.userData.py + d0; B.thighL.position.y = B.thighL.userData.py + d1; fig.pen[0] += d0; fig.pen[1] += d1;
     root.position.y -= min; mesh.updateMatrixWorld(true);
     if (track === false) return;
-    const stance = sR && sL ? (R.x < L.x ? 0 : 1) : sR ? 0 : 1, z = zs[stance];
+    const stance = eR <= eL ? 0 : 1, z = zs[stance];
     if (lastZ !== null && stance === lastStance) { const dz = z - lastZ; if (Math.abs(dz) < 1.2) groundOff += dz; }
+    if (stepsOn && stance !== lastStance) { const i = stance, zg = hz[i] - groundOff, X = hx[i], o = stp.pos[1 - i]; if (o) { stp.out.len[i] = zg - o.z; stp.out.width = Math.abs(X - o.x); } stp.pos[i] = { x: X, z: zg }; addPrint(i, X, zg); }
     lastStance = stance; lastZ = z; groundMat.uniforms.uOff.value = groundOff;
     if (stepsOn) stepTrack(t, [R.x, L.x], hx, hz); updPrints();
   }
@@ -523,7 +531,7 @@ varying vec3 vRest; uniform vec3 mC[8]; uniform vec3 mR[8]; uniform float mA[8];
     g.beginPath(); g.ellipse(32, 98, 15, 22, 0, 0, 7); g.fill(); g.beginPath(); g.ellipse(33, 52, 19, 30, 0, 0, 7); g.fill(); g.fillRect(19, 60, 27, 30);
     [[14, 16, 7], [26, 9, 6], [37, 9, 5.5], [46, 13, 5], [53, 20, 4.5]].forEach(c => { g.beginPath(); g.arc(c[0], c[1], c[2], 0, 7); g.fill(); });
     printTex = new THREE.CanvasTexture(cv);
-    for (let i = 0; i < 16; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 2.5), new THREE.MeshBasicMaterial({ map: printTex, transparent: true, depthWrite: false, opacity: .8 })); m.rotation.set(-Math.PI / 2, 0, 0); m.position.y = .03; m.visible = false; m.renderOrder = 2; scene.add(m); prints.push(m); }
+    for (let i = 0; i < 16; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 2.5), new THREE.MeshBasicMaterial({ map: printTex, transparent: true, depthWrite: false, opacity: .8 })); m.rotation.set(-Math.PI / 2, 0, Math.PI); m.position.y = .03; m.visible = false; m.renderOrder = 2; scene.add(m); prints.push(m); }
   }
   function addPrint(i, x, zg) { if (!printTex) mkPrints(); const m = prints[pi++ % prints.length]; m.material.color.set(i ? 0x5fe0c4 : 0xf4634a); m.scale.x = i ? -1 : 1; m.userData.zg = zg + .95; m.position.x = x + (i ? .08 : -.08); m.visible = true; }
   function updPrints() { for (const m of prints) if (m.visible) { const z = m.userData.zg + groundOff; m.position.z = z; const o = clamp((z + 30) / 10, 0, 1) * .85; m.material.opacity = o; if (z < -30 || z > 30) m.visible = false; } }
@@ -532,12 +540,10 @@ varying vec3 vRest; uniform vec3 mC[8]; uniform vec3 mR[8]; uniform float mA[8];
       const x = xs[i], px = stp.px[i];
       if (px !== null) {
         if (px > .85 && x < .15) {
-          const zg = hz[i] - groundOff, X = hx[i], o = stp.pos[1 - i];
-          if (o) { stp.out.len[i] = zg - o.z; stp.out.width = Math.abs(X - o.x); }
           if (stp.lastT !== null) { const d = t - stp.lastT; if (stp.lastD !== null && d > .02) stp.out.cad = 120 / (d + stp.lastD); stp.lastD = d; }
           stp.lastT = t;
           if (stp.t0[i] !== null && stp.sd[i] !== null) stp.out.st[i] = stp.sd[i] / (t - stp.t0[i]);
-          stp.t0[i] = t; stp.sd[i] = null; stp.pos[i] = { x: X, z: zg }; addPrint(i, X, zg);
+          stp.t0[i] = t; stp.sd[i] = null;
         } else if (px < .6 && x >= .6 && stp.t0[i] !== null) stp.sd[i] = t - stp.t0[i];
       }
       stp.px[i] = x;
@@ -552,11 +558,11 @@ varying vec3 vRest; uniform vec3 mC[8]; uniform vec3 mR[8]; uniform float mA[8];
         const q = new Uint16Array(buf, vo, vn * 3), p = new Float32Array(vn * 3);
         for (let i = 0; i < vn; i++) { p[i * 3] = mx + q[i * 3] * sx; p[i * 3 + 1] = my + q[i * 3 + 1] * sy; p[i * 3 + 2] = mz + q[i * 3 + 2] * sz; }
         const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setIndex(new THREE.BufferAttribute(new Uint16Array(buf, io, ic).slice(), 1)); g.computeVertexNormals();
-        const b = main.bones[bn], me = new THREE.Mesh(g, bm); me.position.copy(b.userData.w).multiplyScalar(-1); me.castShadow = true; me.frustumCulled = false; b.add(me); skel.push(me);
+        for (const f of [main, ghost]) { const b = f.bones[bn], me = new THREE.Mesh(g, bm); me.position.copy(b.userData.w).multiplyScalar(-1); me.castShadow = true; me.frustumCulled = false; b.add(me); skel.push(me); }
       }
     }
     if (skel) skel.forEach(m => m.visible = on);
-    const m = main.mesh.material; m.transparent = on; m.opacity = on ? .26 : 1; m.depthWrite = !on; main.mesh.castShadow = !on; main.mesh.renderOrder = on ? 3 : 0; m.needsUpdate = true;
+    for (const f of [main, ghost]) { const m = f.mesh.material; m.transparent = on; m.opacity = on ? .26 : 1; m.depthWrite = !on; f.mesh.castShadow = !on; f.mesh.renderOrder = on ? 3 : 0; m.needsUpdate = true; }
   }
   function setMuscles(a) { uni.mA.value.set(a); }
   function setTint(mode, amt) { uni.uTint.value = mode; uni.uTintAmt.value = amt; }
@@ -578,7 +584,7 @@ varying vec3 vRest; uniform vec3 mC[8]; uniform vec3 mR[8]; uniform float mA[8];
   function poseAll(p, pat, t) { if (dual) { pose(p, pat, t, main, -4.4, true); pose(p, 'normal', t, ghost, 4.4, false); } else pose(p, pat, t, main, 0, true); }
   function headScreen(k, out) { const f = k ? ghost : main; tmp.set(0, 17.6, 0); wp(f.bones.head, tmp, tmp); tmp.project(camera); const r = canvas.getBoundingClientRect(); out.x = (tmp.x * .5 + .5) * r.width; out.y = (-tmp.y * .5 + .5) * r.height; return out; }
   function setAuto(on) { auto = on; lastInteract = -1e9; }
-  return { init, pose, poseAll, render, view, frame, setMuscles, setTint, muscleScreen, headScreen, setDual, setAuto, setSkel, resetSteps, setSteps: v => { if (v !== stepsOn) { stepsOn = v; if (!v) resetSteps(); } }, stepStats: () => stp.out, dbg: () => ({ pen: main.pen, g: groundOff, st: lastStance, z: lastZ, pos: stp.pos }), isAuto: () => auto, isDual: () => dual, orbit, st };
+  return { init, pose, poseAll, render, view, frame, setMuscles, setTint, muscleScreen, headScreen, setDual, setAuto, setSkel, resetSteps, setSteps: v => { if (v !== stepsOn) { stepsOn = v; if (!v) resetSteps(); } }, stepStats: () => stp.out, dbg: () => ({ ry: main.ry, kn: main.kn, pen: main.pen, g: groundOff, st: lastStance, z: lastZ, pos: stp.pos }), isAuto: () => auto, isDual: () => dual, orbit, st };
 })();
 
 /* ---------- state & loop ---------- */
@@ -757,11 +763,26 @@ function renderPatterns() {
 }
 function openPat(i) { S.patSel = clamp(i, 0, 8); S.cmp = 0; S.playing = true; playIcon(); const v = PAT_VIEW[PAT_ID[S.patSel]]; SCENE.view(v, Z_FULL); viewChips(v); renderPatterns(); panel().scrollTop = 0; }
 
+const REFS = [
+  ['NICE NG236', 'https://www.nice.org.uk/guidance/ng236/chapter/Recommendations', ['insultdan keyingi reabilitatsiya', 'stroke rehabilitation', 'rehabilitasi stroke']],
+  ['NHS', 'https://www.nhs.uk/conditions/foot-drop/', ['oyoq panjasining osilishi', 'foot drop', 'foot drop']],
+  ['NICE NG71', 'https://www.nice.org.uk/guidance/ng71/chapter/Recommendations', ['Parkinson kasalligi', 'Parkinson’s disease', 'Parkinson']],
+  ['NHS', 'https://www.nhs.uk/conditions/ataxia/treatment/', ['ataksiya', 'ataxia', 'ataksia']],
+  ['NICE NG127', 'https://www.nice.org.uk/guidance/ng127/chapter/Recommendations-for-adults-aged-over-16', ['nevrologik belgilar', 'suspected neurological conditions', 'gejala neurologis']],
+  ['NICE NG119', 'https://www.nice.org.uk/guidance/ng119/chapter/Recommendations', ['kattalarda serebral falaj', 'cerebral palsy in adults', 'cerebral palsy dewasa']],
+  ['AAOS OrthoInfo', 'https://www.orthoinfo.org/diseases--conditions/childrens-conditions/limb-length-discrepancy/', ['oyoqlar uzunligi farqi', 'limb length discrepancy', 'perbedaan panjang tungkai']],
+  ['NICE NG226', 'https://www.nice.org.uk/guidance/ng226/chapter/Recommendations', ['osteoartrit', 'osteoarthritis', 'osteoartritis']],
+  ['CUH NHS', 'https://www.cuh.nhs.uk/patient-information/gluteal-tendinopathy/', ['dumba paylari tendinopatiyasi', 'gluteal tendinopathy', 'tendon gluteal']],
+  ['NHS', 'https://www.nhs.uk/conditions/peripheral-neuropathy/treatment/', ['periferik neyropatiya', 'peripheral neuropathy', 'neuropati perifer']],
+  ['NHS', 'https://www.nhs.uk/conditions/stroke/symptoms/', ['insult belgilari', 'stroke symptoms', 'tanda stroke']],
+  ['Parkinson’s UK', 'https://www.parkinsons.org.uk/information/symptoms/motor/freezing', ['qotib qolish', 'freezing', 'gerak membeku']],
+  ['NHS', 'https://www.nhs.uk/conditions/osteoarthritis/treatment/', ['osteoartrit va yordamchi vositalar', 'osteoarthritis and walking aids', 'osteoartritis dan alat bantu']]
+];
 /* penanganan */
 function renderMgmt() {
   const c = C(), ti = c.title;
   panel().innerHTML = `<div class="kicker">${esc(c.sec2)}</div><h1>${esc(c.mgmt.title)}</h1>` + c.mgmt.steps.map((s, k) => `<div class="step"><span class="n">0${k + 1}</span><h3>${esc(s[0])}</h3><p>${esc(s[1])}</p></div>`).join('') +
-    `<div class="thanks"><h2>${esc(c.end.thanks)}</h2><p>Lift And Flow (Gait Cycle) · ${esc(c.end.tag)}</p><p style="margin-top:8px;color:var(--ink)">dr. Florencia Wirawan, Sp.KFR., M.M., MARS.</p><p>${esc(ti.uni)}</p><div class="date">${esc(ti.date)}</div></div>`;
+    `<details class="refs"><summary>${esc({ uz: 'Klinik manbalar', en: 'Clinical references', id: 'Rujukan klinis' }[lang])}</summary>${REFS.map(r => `<a href="${r[1]}" target="_blank" rel="noopener"><b>${esc(r[0])}</b> ${esc(r[2][LANGS.indexOf(lang)])}</a>`).join('')}</details><div class="thanks"><h2>${esc(c.end.thanks)}</h2><p>Lift And Flow (Gait Cycle) · ${esc(c.end.tag)}</p><p style="margin-top:8px;color:var(--ink)">dr. Florencia Wirawan, Sp.KFR., M.M., MARS.</p><p>${esc(ti.uni)}</p><div class="date">${esc(ti.date)}</div></div>`;
   panel().scrollTop = 0;
 }
 
